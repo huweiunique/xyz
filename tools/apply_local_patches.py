@@ -145,6 +145,19 @@ patch(
 # ---------------------------------------------------------------------------
 # 播放增强在上游脚本之后加载，复用其播放器、进度与历史存储。
 for _page in ("web/index.html", "android/app/src/main/assets/hghub/index.html"):
+    patch(_page, "rank and session audio modules", "</head>",
+          '<script src="/local_ext/audio_patch.js"></script>\n'
+          '<script src="/local_ext/rank_patch.js"></script>\n',
+          where="before-anchor-line")
+    patch(_page, "initialize rank and session audio", '\nloadHotTags();\nloadHome();',
+          'if (window.HGAudio) window.HGAudio.install(store);\n'
+          'if (window.HGRanks) window.HGRanks.init();\n',
+          where="before-anchor-line", syntax="js")
+    patch(_page, "rank video ID adapter", 'async function loadRank(type){',
+          '  if (window.HGRanks) return window.HGRanks.load(type);\n', syntax="js")
+    patch(_page, "pause preserves session audio", "  if (store.get('hg_muted', true)){ store.set('hg_muted', false); v.muted = false; updateMuteBtns(); }",
+          'if (window.HGAudio) return; // 暂停和继续不能自动开声。\n',
+          where="before-anchor-line", syntax="js")
     patch(_page, "player enhancements", "</body>",
           '<script src="/local_ext/player_patch.js"></script>\n',
           where="before-anchor-line")

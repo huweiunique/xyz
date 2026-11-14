@@ -125,7 +125,11 @@
     if (isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration * seek.value / 1000;
     scrubbing = false; update();
   });
-  var mute = button('', 'hgMute', null, function () { video.muted = !video.muted; update(); });
+  var mute = button('', 'hgMute', null, function () {
+    if (window.HGAudio) window.HGAudio.toggle();
+    else video.muted = !video.muted;
+    update();
+  });
   button('系统全屏', 'hgSystemFullscreen', null, function () {
     try {
       if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();

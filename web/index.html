@@ -175,6 +175,10 @@ body[data-view="home"] footer{display:none}
 <!-- HGhub local patch begin (tools/apply_local_patches.py) -->
 <script src="/local_ext/web_patch.js"></script>
 <!-- HGhub local patch end (tools/apply_local_patches.py) -->
+<!-- HGhub local patch begin (tools/apply_local_patches.py) -->
+<script src="/local_ext/audio_patch.js"></script>
+<script src="/local_ext/rank_patch.js"></script>
+<!-- HGhub local patch end (tools/apply_local_patches.py) -->
 </head>
 <body data-view="home">
 <header>
@@ -703,6 +707,9 @@ function toggleSlidePause(id){
   if (!v || (!v.src && !v.currentSrc)) return;
   if (v.paused){ var p = v.play(); if (p && p.catch) p.catch(function(){}); showCenterFlash(el, '▶'); }
   else { v.pause(); showCenterFlash(el, '❚❚'); }
+  /* ==== HGHUB_LOCAL_PATCH BEGIN ==== */
+  if (window.HGAudio) return; // 暂停和继续不能自动开声。
+  /* ==== HGHUB_LOCAL_PATCH END ==== */
   if (store.get('hg_muted', true)){ store.set('hg_muted', false); v.muted = false; updateMuteBtns(); }
 }
 function showCenterFlash(el, txt){
@@ -962,6 +969,9 @@ async function loadCatNext(){
   }
 }
 async function loadRank(type){
+/* ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ==== */
+  if (window.HGRanks) return window.HGRanks.load(type);
+/* ==== HGHUB_LOCAL_PATCH END ==== */
   var myRun = ++runToken.rank;
   var box = $('#rankList');
   box.innerHTML = '<div class="empty">加载中...</div>';
@@ -1585,6 +1595,10 @@ function goHome(){
   if (f) f.scrollTo({top: 0, behavior: 'smooth'});
   window.scrollTo(0, 0);
 }
+/* ==== HGHUB_LOCAL_PATCH BEGIN ==== */
+if (window.HGAudio) window.HGAudio.install(store);
+if (window.HGRanks) window.HGRanks.init();
+/* ==== HGHUB_LOCAL_PATCH END ==== */
 $('#btnLogoHome').onclick = goHome;
 loadHotTags();
 loadHome();

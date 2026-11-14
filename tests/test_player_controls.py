@@ -62,6 +62,24 @@ class PlayerControlsTests(BrowserFixture):
         })()""")
         self.assertEqual(rates, {'during': 2, 'after': 1.5})
 
+    def test_blank_player_background_hides_immediately_without_toggling_playback(self):
+        result = self.evaluate("""(()=>{
+          const pane=document.querySelector('#playerPane'),v=document.querySelector('#video');
+          const states=[];
+          for(const target of [v,pane,document.querySelector('#player .box'),document.querySelector('#player')]){
+            document.body.classList.remove('hg-ui-hidden');
+            const paused=v.paused;
+            for(const name of ['pointerdown','pointerup'])target.dispatchEvent(new PointerEvent(name,{bubbles:true,isPrimary:true,button:0}));
+            target.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+            const hidden=document.body.classList.contains('hg-ui-hidden');
+            for(const name of ['pointerdown','pointerup'])target.dispatchEvent(new PointerEvent(name,{bubbles:true,isPrimary:true,button:0}));
+            target.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+            states.push({hidden,revealed:!document.body.classList.contains('hg-ui-hidden'),unchanged:v.paused===paused});
+          }
+          return states;
+        })()""")
+        self.assertEqual(result, [dict(hidden=True,revealed=True,unchanged=True)] * 4)
+
     def test_default_natural_and_shared_feed_choice_persist(self):
         self.assertEqual(self.evaluate('HGEnhance.getMode()'), 'natural')
         self.evaluate("document.querySelector('#feed').innerHTML='<div class=\"slide active\"><video class=\"bgvid\"></video><div class=\"acts\"></div></div>'")

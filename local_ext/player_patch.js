@@ -88,13 +88,19 @@
     else rotate.textContent = label;
   }
   rotate.addEventListener('hg-icon-ready',function(){updateRotation(document.body.classList.contains('hg-landscape'));});
-  pane.addEventListener('pointerdown', function (e) {
+  function isScreenTarget(target) {
+    return target && target.closest && !target.closest('button,a,input,select,summary,.ctl,.hg-choice,#hgLockShield');
+  }
+  player.addEventListener('pointerdown', function (e) {
+    if (!immersive || document.body.classList.contains('hg-locked')) return;
     interacting = true;
-    screenInteraction = e.target === video;
+    screenInteraction = isScreenTarget(e.target);
     tapWasHidden = document.body.classList.contains('hg-ui-hidden');
     if (!screenInteraction) reveal();
   });
-  video.addEventListener('click', function () {
+  // 黑色留白、播放器容器与视频画面都即时显隐；具体控件继续执行自身操作。
+  player.addEventListener('click', function (e) {
+    if (!immersive || document.body.classList.contains('hg-locked') || !isScreenTarget(e.target)) return;
     clearTimeout(hideTimer);
     if (tapWasHidden) reveal();
     else document.body.classList.add('hg-ui-hidden');
