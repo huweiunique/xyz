@@ -60,8 +60,17 @@ dispatchMain()
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(process.stderr.close)
         self.addCleanup(process.stdout.close)
+        trace = []
+        def collect_trace():
+            for line in process.stderr:
+                trace.append(line.rstrip())
+        trace_thread = threading.Thread(target=collect_trace, daemon=True)
+        trace_thread.start()
         def stop():
             process.terminate(); process.wait(timeout=5)
+            trace_thread.join(timeout=2)
+            if trace:
+                print('\n' + '\n'.join(trace), file=sys.stderr, flush=True)
         self.addCleanup(stop)
         result = queue.Queue()
         threading.Thread(target=lambda: result.put(process.stdout.readline()), daemon=True).start()
@@ -98,6 +107,36 @@ dispatchMain()
         self.assertEqual(len(received), len(payload) + len(b'fixture-tail'),
                          f'转发数据不完整：收到 {len(received)} 字节，期望 {len(payload) + len(b"fixture-tail")} 字节；末尾={received[-24:]!r}')
         self.assertEqual(received, payload + b'fixture-tail')
+
+    def test_half_close_preserves_empty_and_read_boundary_payloads(self):
+        for length in [0, 1, 16383, 16384, 16385, 65535, 65536, 65537]:
+            with self.subTest(length=length):
+                connection = self.start_proxy()
+                self.assertIn(b'200 Connection Established', self.connect_header(connection))
+                payload = (bytes(range(256)) * ((length + 255) // 256))[:length]
+                connection.sendall(payload)
+                connection.shutdown(socket.SHUT_WR)
+                received = b''
+                while chunk := connection.recv(65536):
+                    received += chunk
+                self.assertEqual(received, payload + b'fixture-tail')
+
+    def test_stream_delivers_data_before_client_half_close(self):
+        connection = self.start_proxy()
+        self.assertIn(b'200 Connection Established', self.connect_header(connection))
+        for payload in [b'first-part', bytes(range(256)) * 80, b'last-part']:
+            connection.sendall(payload)
+            received = b''
+            while len(received) < len(payload):
+                chunk = connection.recv(len(payload) - len(received))
+                self.assertTrue(chunk, '客户端关闭写端之前通道意外结束')
+                received += chunk
+            self.assertEqual(received, payload)
+        connection.shutdown(socket.SHUT_WR)
+        received = b''
+        while chunk := connection.recv(65536):
+            received += chunk
+        self.assertEqual(received, b'fixture-tail')
 
     def test_other_domain_or_port_is_rejected(self):
         for host, port in [('another.invalid', None), ('backend.example.invalid', 1)]:
