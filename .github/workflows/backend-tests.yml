@@ -15,6 +15,13 @@ jobs:
       - name: 工具链版本
         run: swift --version
       - name: 原生转发诊断
-        env:
-          HGHUB_TRANSPORT_TRACE: '1'
-        run: python3 tests/test_prefip_transport.py -v
+        run: |
+          python3 tests/test_prefip_transport.py -v
+          python3 - <<'PY'
+          import sys, unittest
+          sys.path.insert(0, 'tests')
+          from test_prefip_transport import PreferredIPTransportTests
+          suite = unittest.TestSuite(PreferredIPTransportTests('test_tunnel_preserves_bytes_and_half_close_tail') for _ in range(20))
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY

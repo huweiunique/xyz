@@ -94,6 +94,7 @@ final class CFConnectProxy {
 
         func start() {
             incoming.stateUpdateHandler = { [weak self] state in
+                // 建连后交给收发回调收尾，避免状态回调取消另一方向尚未完成的发送。
                 if case .failed = state, let self = self, !self.established { self.close() }
             }
             incoming.start(queue: queue)
@@ -153,6 +154,7 @@ final class CFConnectProxy {
                         })
                     })
                 case .failed:
+                    // 此时反向接收可能仍有数据；不能抢在 pipe 回调前取消两个连接。
                     if !self.established { failed() }
                 default: break
                 }
