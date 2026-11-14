@@ -36,6 +36,12 @@
     'body.hg-immersive{--hg-top:var(--hg-screen-top);--hg-right:var(--hg-screen-right);--hg-bottom:var(--hg-screen-bottom);--hg-left:var(--hg-screen-left)}',
     'body.hg-immersive.hg-landscape{--hg-top:var(--hg-screen-right);--hg-right:var(--hg-screen-bottom);--hg-bottom:var(--hg-screen-left);--hg-left:var(--hg-screen-top)}',
     '#playerPane{color-scheme:dark}',
+    '.hg-center-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;display:flex;align-items:center;justify-content:center;width:72px;height:72px;min-width:72px;padding:0;border-radius:50%;border:1px solid #ffffff50;background:#17171f80;color:#fff;cursor:pointer;touch-action:manipulation;transition:none}',
+    '.hg-center-play svg{width:32px;height:32px;pointer-events:none}',
+    '.hg-center-play:focus-visible{outline:3px solid #ffda64;outline-offset:4px}',
+    '.hg-center-play:active{background:#17171fcc}',
+    '@media(hover:hover) and (pointer:fine){.hg-center-play:hover{background:#17171fa6}}',
+    'body.hg-ui-hidden #hgPlayPause,body.hg-locked #hgPlayPause{visibility:hidden;pointer-events:none}',
     '#playerPane .ctl{display:flex;gap:8px;flex-wrap:wrap}',
     'body.hg-immersive #playerPane .ctl{bottom:var(--hg-bottom);left:var(--hg-left);right:var(--hg-right);max-height:46%;overscroll-behavior:contain}',
     '#playerPane .ctl button,.hg-choice button{color:#f5f5f7;-webkit-text-fill-color:#f5f5f7;background:#23232c;border:1px solid #666673;min-width:48px;min-height:48px;font-size:14px;padding:8px 12px}',
@@ -104,9 +110,10 @@
     sync();
   });
   var progress = document.createElement('div'); progress.className = 'hg-progress';
-  var play = button('播放', 'hgPlayPause', progress, function () {
+  var play = button('', 'hgPlayPause', pane, function () {
     if (video.paused) video.play().catch(function () { notify('请再次点播放'); }); else video.pause();
   });
+  play.className = 'hg-center-play';
   var seek = document.createElement('input'); seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
   seek.setAttribute('aria-label', '播放进度'); progress.appendChild(seek);
   var clock = document.createElement('output'); progress.appendChild(clock);
@@ -138,7 +145,10 @@
   }
   shield.addEventListener('click', function (event) { event.stopPropagation(); });
   function update() {
-    play.textContent = video.paused ? '播放' : '暂停'; play.setAttribute('aria-label', play.textContent);
+    var playLabel = video.paused ? '播放' : '暂停';
+    play.setAttribute('aria-label', playLabel);
+    play.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+      (video.paused ? '<path d="M8 5v14l11-7z"/>' : '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>') + '</svg>';
     var muteLabel = video.muted ? '开启声音' : '静音';
     mute.setAttribute('aria-label', muteLabel); mute.title = muteLabel;
     if (mute.dataset.hgIcon) mute.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/>' + (video.muted ? '<path d="m16 9 5 6m0-6-5 6"/>' : '<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>') + '</svg>';

@@ -27,6 +27,9 @@
     body[data-view=home] .slide{opacity:1;transform:none;transition:none;will-change:auto}
     body[data-view=home].hg-feed-clean .bottomnav,
     body[data-view=home].hg-feed-clean .slide :is(.info,.acts,.mutebtn,.prog,.shade){visibility:hidden;pointer-events:none}
+    body[data-view=home] .slide .hg-center-play{z-index:4}
+    body[data-view=home].hg-feed-clean .hg-center-play{visibility:hidden;pointer-events:none}
+    body[data-view=home] .slide .centerflash{display:none;animation:none}
     #hgFeedHint{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:5;color:#fff;background:#0009;border-radius:20px;padding:8px 14px;font-size:12px;pointer-events:none;white-space:nowrap}
     body:not([data-view=home]) #hgFeedHint,body:not(.hg-feed-clean) #hgFeedHint,body.modal-open #hgFeedHint{display:none}
     #playerPane .ctl{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding:6px;background:#141419d9;border:1px solid #ffffff24;border-radius:12px}
@@ -115,23 +118,51 @@
     clean(true);
   },4000); }
   function reveal() { clean(false); scheduleHide(); }
-  // 保留原双击点赞计时；单击仅显隐操作，暂停改为明确按钮，避免唤出导航时误暂停。
+  // 单击仅显隐操作；中央按钮独立执行播放，避免唤出时误暂停。
   var originalPause = window.toggleSlidePause;
   if (originalPause) window.toggleSlidePause = function () { if (body.classList.contains('hg-feed-clean')) reveal(); else clean(true); };
   function feedButtons() {
-    feed.querySelectorAll('.slide .acts').forEach(function (acts) {
-      if (acts.querySelector('.hg-feed-pause')) return;
-      var b = document.createElement('button'); b.className = 'hg-feed-pause'; b.type = 'button';
+    feed.querySelectorAll('.slide').forEach(function (slide) {
+      if (slide.querySelector('.hg-feed-pause')) return;
+      var b = document.createElement('button'); b.className = 'hg-feed-pause hg-center-play'; b.type = 'button';
       function syncPause() {
-        var v=acts.closest('.slide').querySelector('video.bgvid'),paused=!v || v.paused;
+        var v=slide.querySelector('video.bgvid'),paused=!v || v.paused;
         b.setAttribute('aria-label',paused?'播放':'暂停');
-        b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">'+(paused?'<path d="m9 5 11 7-11 7z"/>':'<path d="M8 5v14M16 5v14"/>')+'</svg>';
+        b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'+(paused?'<path d="M8 5v14l11-7z"/>':'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>')+'</svg>';
       }
-      var media=acts.closest('.slide').querySelector('video.bgvid');
+      var media=slide.querySelector('video.bgvid');
       if(media){media.addEventListener('play',syncPause);media.addEventListener('pause',syncPause);}
       syncPause();
-      b.onclick = function (e) { e.stopPropagation(); if(originalPause) originalPause(+acts.closest('.slide').dataset.id); reveal(); };
-      acts.insertBefore(b,acts.firstChild);
+      var tapTimer, lastTap = 0;
+      b.onclick = function (e) {
+        e.stopPropagation(); clearTimeout(tapTimer); lastTap = 0;
+        if(originalPause) originalPause(+slide.dataset.id);
+        reveal();
+      };
+      slide.appendChild(b);
+      // 在捕获阶段处理画面，中央隐藏区域的连续点击也不会进入上游双击点赞。
+      slide.addEventListener('click', function (e) {
+        if (e.target.closest('button,a,input,select,summary,.acts,.info,.mutebtn,.prog')) return;
+        e.stopImmediatePropagation();
+        var rect = b.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          clearTimeout(tapTimer); lastTap = 0; reveal(); return;
+        }
+        var now = Date.now();
+        if (lastTap && now - lastTap < 300) {
+          clearTimeout(tapTimer); lastTap = 0;
+          var item = findVideo(+slide.dataset.id);
+          if (item && !isLiked(item.id)) toggleLike(item);
+          var heart = document.createElement('div'); heart.className = 'heartpop'; heart.textContent = '♥';
+          slide.appendChild(heart); setTimeout(function () { heart.remove(); }, 750);
+        } else {
+          lastTap = now;
+          tapTimer = setTimeout(function () {
+            lastTap = 0;
+            if (slide.isConnected && slide.classList.contains('active')) window.toggleSlidePause();
+          }, 300);
+        }
+      }, true);
     });
   }
   feedButtons(); new MutationObserver(feedButtons).observe(feed,{subtree:true,childList:true});
@@ -140,7 +171,15 @@
   window.addEventListener('pointerup',endFeedInteraction);
   window.addEventListener('pointercancel',endFeedInteraction);
   window.addEventListener('blur',endFeedInteraction);
-  feed.addEventListener('pointermove',function(e){if(e.pointerType==='mouse')reveal();});
+  feed.addEventListener('pointermove',function(e){
+    if(e.pointerType!=='mouse')return;
+    var b=feed.querySelector('.slide.active .hg-center-play');
+    if(body.classList.contains('hg-feed-clean') && b){
+      var r=b.getBoundingClientRect();
+      if(e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom)return;
+    }
+    reveal();
+  });
   feed.addEventListener('pause',function(e){if(e.target.matches('video.bgvid') && e.target.closest('.slide.active'))reveal();},true);
   ['play','seeking','seeked'].forEach(function(name){feed.addEventListener(name,function(e){
     if(e.target.matches('video.bgvid') && !body.classList.contains('hg-feed-clean'))reveal();

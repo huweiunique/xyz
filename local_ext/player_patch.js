@@ -53,8 +53,12 @@
       document.body.classList.add('hg-ui-hidden');
     }, 4000);
   }
-  var interacting = false;
-  function finishInteraction() { if (!interacting) return; interacting = false; reveal(); }
+  var interacting = false, screenInteraction = false, tapWasHidden = false;
+  function finishInteraction() {
+    if (!interacting) return;
+    interacting = false;
+    if (!screenInteraction) reveal();
+  }
   function syncPlayer() {
     var visible = !player.hidden && !pane.hidden;
     if (visible === immersive) return;
@@ -84,13 +88,34 @@
     else rotate.textContent = label;
   }
   rotate.addEventListener('hg-icon-ready',function(){updateRotation(document.body.classList.contains('hg-landscape'));});
-  pane.addEventListener('pointerdown', function () { interacting = true; reveal(); });
+  pane.addEventListener('pointerdown', function (e) {
+    interacting = true;
+    screenInteraction = e.target === video;
+    tapWasHidden = document.body.classList.contains('hg-ui-hidden');
+    if (!screenInteraction) reveal();
+  });
+  video.addEventListener('click', function () {
+    clearTimeout(hideTimer);
+    if (tapWasHidden) reveal();
+    else document.body.classList.add('hg-ui-hidden');
+  });
   window.addEventListener('pointerup', finishInteraction);
   window.addEventListener('pointercancel', finishInteraction);
   window.addEventListener('blur', finishInteraction);
-  pane.addEventListener('pointermove', function (e) { if(e.pointerType === 'mouse') reveal(); });
+  pane.addEventListener('pointermove', function (e) {
+    if(e.pointerType !== 'mouse') return;
+    var b = pane.querySelector('#hgPlayPause');
+    if(document.body.classList.contains('hg-ui-hidden') && b) {
+      var r = b.getBoundingClientRect();
+      if(e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    }
+    reveal();
+  });
   pane.addEventListener('focusin', reveal);
-  pane.addEventListener('focusout', reveal);
+  pane.addEventListener('focusout', function () {
+    // 隐藏控件会让触摸点击留下的焦点自动失效，不能因此立即重新唤出。
+    if (!document.body.classList.contains('hg-ui-hidden')) reveal();
+  });
   video.addEventListener('play', reveal);
   video.addEventListener('pause', reveal);
   video.addEventListener('seeking', reveal);
