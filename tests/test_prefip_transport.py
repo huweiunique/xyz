@@ -1,5 +1,6 @@
 """macOS 上编译实际 Swift 通道，用本机 TCP 服务验证；Windows/Linux 明确跳过。"""
 from pathlib import Path
+import os
 import queue
 import shutil
 import socket
@@ -32,6 +33,23 @@ class PreferredIPTransportTests(unittest.TestCase):
         # 取实际生产类，不复制或重写实现；控制器和 WebKit API 仍由 IPA 构建校验。
         source = (ROOT / 'ios/HGhub/HGhub/PreferredIP.swift').read_text(encoding='utf-8')
         source = source.split('@MainActor\nfinal class PreferredIPController')[0].replace('import WebKit', '')
+        if os.environ.get('HGHUB_TRANSPORT_TRACE') == '1':
+            source = source.replace('var completedDirections = 0', '''var completedDirections = 0
+        func trace(_ text: String) {
+            FileHandle.standardError.write(Data(("[DEBUG-ipa] " + text + "\\n").utf8))
+        }''')
+            source = source.replace('incoming.stateUpdateHandler = { [weak self] state in',
+                'incoming.stateUpdateHandler = { [weak self] state in\n                self?.trace("incoming state=\\(state)")')
+            source = source.replace('connection.stateUpdateHandler = { [weak self] state in',
+                'connection.stateUpdateHandler = { [weak self] state in\n                self?.trace("outgoing state=\\(state)")')
+            source = source.replace('guard error == nil else { self.close(); return }',
+                'self.trace("read dir=\\(source === self.incoming ? "up" : "down") bytes=\\(data?.count ?? 0) done=\\(done) error=\\(String(describing: error))")\n                guard error == nil else { self.close(); return }')
+            source = source.replace('if error != nil { self.close() }',
+                'self.trace("sent dir=\\(source === self.incoming ? "up" : "down") bytes=\\(data?.count ?? 0) done=\\(done) error=\\(String(describing: error))")\n                    if error != nil { self.close() }')
+            source = source.replace('self.completedDirections += 1',
+                'self.trace("fin dir=\\(source === self.incoming ? "up" : "down")")\n                            self.completedDirections += 1')
+            source = source.replace('guard !closed else { return }; closed = true',
+                'guard !closed else { return }; closed = true\n            trace("close directions=\\(completedDirections)")')
         (folder / 'Transport.swift').write_text(source, encoding='utf-8')
         (folder / 'main.swift').write_text('''
 import Foundation
@@ -60,8 +78,17 @@ dispatchMain()
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(process.stderr.close)
         self.addCleanup(process.stdout.close)
+        trace = []
+        def collect_trace():
+            for line in process.stderr:
+                trace.append(line.rstrip())
+        trace_thread = threading.Thread(target=collect_trace, daemon=True)
+        trace_thread.start()
         def stop():
             process.terminate(); process.wait(timeout=5)
+            trace_thread.join(timeout=2)
+            if trace:
+                print('\n' + '\n'.join(trace), file=sys.stderr, flush=True)
         self.addCleanup(stop)
         result = queue.Queue()
         threading.Thread(target=lambda: result.put(process.stdout.readline()), daemon=True).start()
