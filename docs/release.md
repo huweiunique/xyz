@@ -1,5 +1,9 @@
 # 发版：APK / IPA / Docker
 
+Nightly 的 GitHub 标签和 Docker 镜像标签均固定为 `nightly`，每次更新覆盖；
+Docker 不再额外生成 `nightly-<sha>` 标签。已有远端历史标签不由此规则自动删除。
+安装包文件名仍保留日期与提交号，便于识别下载版本。
+
 ## Nightly 附件保留规则
 
 IPA 内的 Nightly 构建标识采用紧凑格式，例如 `N261113-9478076`：`N` 表示 Nightly、

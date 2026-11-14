@@ -244,7 +244,7 @@ gh secret set DOCKERHUB_TOKEN      # 粘贴上一步的 dckr_pat_...
 
 | 触发 | 推送的标签 | 说明 |
 | --- | --- | --- |
-| Nightly（每天定时/手动） | `nightly`、`nightly-<sha>` | **不会覆盖 `latest`** |
+| Nightly（每天定时/手动） | `nightly` | 每次覆盖，仅此一个 Nightly 标签 |
 | 正式 tag（`v1.2.0.9`） | `v1.2.0.9`、`1.2.0.8`、`latest` | 只有正式发版才更新 `latest` |
 
 - 多架构：同时构建 `linux/amd64` 和 `linux/arm64`（ARM 服务器 / Apple Silicon 可直接跑）；
@@ -420,8 +420,8 @@ docker compose -f /opt/1panel/docker/compose/hghub/docker-compose.yml pull
 docker compose -f /opt/1panel/docker/compose/hghub/docker-compose.yml up -d
 ```
 
-> `nightly` 标签每天覆盖，所以「更新」就能拿到当天构建。想固定版本就改成
-> `<你的DockerHub用户名>/hghub:nightly-<sha>`，或者等正式版的 `latest`。
+> `nightly` 标签每次成功推送时覆盖，不再生成 `nightly-<sha>` 标签。想固定某次构建，
+> 使用该次运行「推送结果」中的摘要：`<你的DockerHub用户名>/hghub@sha256:<摘要>`。
 
 ### 8.8 常见问题
 
@@ -616,13 +616,13 @@ App 壳加载的也是这个页面：
 
 | 看哪里 | 值 | 含义 |
 | --- | --- | --- |
-| 镜像 tag | `nightly` / `nightly-6512156` | 每天覆盖 / 对应某次提交 |
+| 镜像 tag | `nightly` | 每次成功推送时覆盖 |
 | `docker images` 的 TAG 列 | `nightly` | 这是标签，不是版本 |
 | 页面/`build.gradle` | `1.2.0.8` | 上游基线版本号，目前所有构建都基于它 |
 
 所以 `docker pull <用户名>/hghub:nightly` 是**能用的**（本仓库验证过：容器 `healthy`，
-页面与 `/api/play` 均 200）。想确认拿到的是不是最新，看 `nightly-<sha>` 标签
-和 GitHub Actions 的运行记录即可。
+页面与 `/api/play` 均 200）。想确认拿到的是不是最新，核对 GitHub Actions
+运行记录中的镜像摘要与提交号。
 
 > 补充：`nightly` 这个名字**不会**出现在镜像的 tag 列表之外——`docker images` 里
 > 显示的 `1.2.0.8` 可能是你本地早年 `docker build -t hghub:1.2.0.8` 留下的，
