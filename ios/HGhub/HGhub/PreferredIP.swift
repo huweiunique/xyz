@@ -168,11 +168,12 @@ final class CFConnectProxy {
                 guard let self = self, !self.closed else { return }
                 guard error == nil else { self.close(); return }
                 // 先完成最后一块数据的发送，再单独发 FIN，保持数据和写关闭的顺序。
-                target.send(content: data, isComplete: true, completion: .contentProcessed { [weak self] error in
+                target.send(content: data, contentContext: .defaultStream, isComplete: false,
+                            completion: .contentProcessed { [weak self] error in
                     guard let self = self, !self.closed else { return }
                     if error != nil { self.close() }
                     else if done {
-                        target.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                        target.send(content: nil, contentContext: .defaultStream, isComplete: true,
                                     completion: .contentProcessed { [weak self] error in
                             guard let self = self, !self.closed else { return }
                             if error != nil { self.close(); return }
