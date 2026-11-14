@@ -94,7 +94,7 @@ final class CFConnectProxy {
 
         func start() {
             incoming.stateUpdateHandler = { [weak self] state in
-                if case .failed = state { self?.close() }
+                if case .failed = state, let self = self, !self.established { self.close() }
             }
             incoming.start(queue: queue)
             readHeader()
@@ -153,7 +153,7 @@ final class CFConnectProxy {
                         })
                     })
                 case .failed:
-                    if self.established { self.close() } else { failed() }
+                    if !self.established { failed() }
                 default: break
                 }
             }
@@ -162,30 +162,33 @@ final class CFConnectProxy {
         }
 
         func pipe(_ source: NWConnection, to target: NWConnection) {
-            // Smaller bounded reads keep NWConnection flowing across a large write followed by
-            // TCP half-close; a single 64 KiB read can be reported as complete before queued tail bytes.
+            // 连接状态失败时也先排空已交付的数据；两个方向各自完成后才释放通道。
             source.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, done, error in
                 guard let self = self, !self.closed else { return }
-                guard error == nil else { self.close(); return }
+                func finish() {
+                    target.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                                completion: .contentProcessed { [weak self] _ in self?.finishDirection() })
+                }
+                guard let data = data, !data.isEmpty else {
+                    if done || error != nil { finish() }
+                    else { self.pipe(source, to: target) }
+                    return
+                }
                 // 先完成最后一块数据的发送，再单独发 FIN，保持数据和写关闭的顺序。
-                target.send(content: data, contentContext: .defaultStream, isComplete: false,
-                            completion: .contentProcessed { [weak self] error in
+                target.send(content: data, isComplete: true, completion: .contentProcessed { [weak self] sendError in
                     guard let self = self, !self.closed else { return }
-                    if error != nil { self.close() }
-                    else if done {
-                        target.send(content: nil, contentContext: .defaultStream, isComplete: true,
-                                    completion: .contentProcessed { [weak self] error in
-                            guard let self = self, !self.closed else { return }
-                            if error != nil { self.close(); return }
-                            self.completedDirections += 1
-                            if self.completedDirections == 2 { self.close() }
-                            else {
-                                self.queue.asyncAfter(deadline: .now() + 15) { [weak self] in self?.close() }
-                            }
-                        })
-                    } else { self.pipe(source, to: target) }
+                    if sendError != nil { self.finishDirection() }
+                    else if done || error != nil { finish() }
+                    else { self.pipe(source, to: target) }
                 })
             }
+        }
+
+        func finishDirection() {
+            guard !closed else { return }
+            completedDirections += 1
+            if completedDirections == 2 { close() }
+            else { queue.asyncAfter(deadline: .now() + 15) { [weak self] in self?.close() } }
         }
 
         func close() {
