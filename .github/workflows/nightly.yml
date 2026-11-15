@@ -1,8 +1,9 @@
 name: Nightly
+run-name: Nightly · ${{ inputs.scope || 'auto' }} · ${{ github.ref_name }}
 
 # 默认发布通道。
 #
-#   - 每天定时（也可手动触发）构建 APK + IPA，发布为 "nightly" 预发布，
+#   - 每天定时按各端变更构建，手动可指定服务端、APK、IPA 或全量，
 #     同一个 tag 每次覆盖更新，不占用正式版本号。
 #   - 只有维护者手动打 vX.Y.Z tag 时，才由 release.yml 发正式版本。
 
@@ -10,16 +11,42 @@ on:
   schedule:
     - cron: "0 18 * * *"        # 每天 UTC 18:00（北京时间 02:00）
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 构建范围（auto 按各端最近成功构建判断）
+        type: choice
+        default: auto
+        options: [auto, server, android, ios, apps, all]
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
-  group: nightly
+  group: nightly-${{ github.ref }}-${{ inputs.scope || 'auto' }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.select.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: 按端选择构建范围
+        id: select
+        uses: actions/github-script@v7
+        env:
+          BUILD_SCOPE: ${{ inputs.scope || 'auto' }}
+        with:
+          script: |
+            const select = require('./.github/scripts/select_build_targets.js');
+            await select({github, context, core, scope: process.env.BUILD_SCOPE});
   build:
+    needs: scope
+    if: needs.scope.outputs.targets != 'none'
     uses: ./.github/workflows/_build.yml
     # 显式传递 Docker Hub 凭据（workflow_call 不会自动继承 secrets）
     secrets:
@@ -27,4 +54,5 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     with:
       channel: nightly
+      targets: ${{ needs.scope.outputs.targets }}
       app_url: ${{ vars.HGHUB_APP_URL || '' }}

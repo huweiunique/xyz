@@ -11,12 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), '未安装 Node，无法执行发布清理脚本')
 class NightlyAssetTests(unittest.TestCase):
-    def execute(self, assets, files=None):
+    def execute(self, assets, files=None, targets='all'):
         workflow = (ROOT / '.github/workflows/_build.yml').read_text(encoding='utf-8')
         block = workflow.split('      - name: Nightly 仅保留本次安装包\n', 1)[1]
         script = block.split('          script: |\n', 1)[1].split('\n  # ', 1)[0]
         script = '\n'.join(line[12:] for line in script.splitlines() if line.strip())
         payload = {'script': script, 'assets': assets,
+                   'targets': targets,
                    'files': files or {'HGhub-current.apk': 10, 'HGhub-current.ipa': 20}}
         harness = r"""
           let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',async()=>{
@@ -27,7 +28,7 @@ class NightlyAssetTests(unittest.TestCase):
             let error=null;
             try { await new (Object.getPrototypeOf(async function(){}).constructor)(
               'require','process','github','context','core',p.script)(
-              name=>name==='fs'?fs:require(name),{env:{RELEASE_ID:'123'}},client,
+              name=>name==='fs'?fs:require(name),{env:{RELEASE_ID:'123',BUILD_TARGETS:p.targets}},client,
               {repo:{owner:'fixture',repo:'fixture'},sha:'current-sha'},{info:()=>{}});
             } catch(e) {error=e.message;}
             console.log(JSON.stringify({deleted,error,tags}));
@@ -45,7 +46,7 @@ class NightlyAssetTests(unittest.TestCase):
 
     def test_success_preserves_current_pair_and_removes_old_files(self):
         result = self.execute(self.assets())
-        self.assertEqual(result['deleted'], [3, 4])
+        self.assertEqual(result['deleted'], [3])
         self.assertIsNone(result['error'])
         self.assertEqual(result['tags'], [dict(owner='fixture', repo='fixture', ref='tags/nightly', sha='current-sha', force=False)])
 
@@ -68,3 +69,13 @@ class NightlyAssetTests(unittest.TestCase):
         result = self.execute(self.assets(), {'HGhub-current.apk': 10})
         self.assertEqual(result['deleted'], [])
         self.assertTrue(result['error'])
+
+    def test_single_platform_publish_preserves_other_platform(self):
+        assets = self.assets() + [dict(id=5,name='HGhub-old.ipa',size=19,state='uploaded'),
+                                  dict(id=6,name='other-project.apk',size=10,state='uploaded')]
+        android = self.execute(assets, {'HGhub-current.apk':10}, targets='android')
+        self.assertIsNone(android['error'])
+        self.assertEqual(android['deleted'], [3])
+        ios = self.execute(assets, {'HGhub-current.ipa':20}, targets='ios')
+        self.assertIsNone(ios['error'])
+        self.assertEqual(ios['deleted'], [5])

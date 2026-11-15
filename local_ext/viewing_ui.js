@@ -28,7 +28,7 @@
     body[data-view=home].hg-feed-clean .bottomnav,
     body[data-view=home].hg-feed-clean .slide :is(.info,.acts,.mutebtn,.prog,.shade){visibility:hidden;pointer-events:none}
     body[data-view=home] .slide .hg-center-play{z-index:4}
-    body[data-view=home].hg-feed-clean .hg-center-play{visibility:hidden;pointer-events:none}
+    body[data-view=home].hg-feed-clean #feed .hg-center-play{visibility:hidden;pointer-events:none}
     body[data-view=home] .slide .centerflash{display:none;animation:none}
     #hgFeedHint{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:5;color:#fff;background:#0009;border-radius:20px;padding:8px 14px;font-size:12px;pointer-events:none;white-space:nowrap}
     body:not([data-view=home]) #hgFeedHint,body:not(.hg-feed-clean) #hgFeedHint,body.modal-open #hgFeedHint{display:none}

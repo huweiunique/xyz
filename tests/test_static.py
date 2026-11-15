@@ -159,6 +159,7 @@ class LocalPatchTests(unittest.TestCase):
         # 每一条都应是 already：说明已打过的补丁不会再插入一次
         self.assertIn("already", proc.stdout)
         self.assertNotIn(": applied", proc.stdout)
+        self.assertNotIn(": updated", proc.stdout)
 
     def test_hooks_present_in_upstream_files(self):
         server = read("web", "server.py")
@@ -171,9 +172,9 @@ class LocalPatchTests(unittest.TestCase):
 
     def test_frontend_patch_is_one_line_include(self):
         html = read("web", "index.html")
-        self.assertEqual(html.count('script src="/local_ext/web_patch.js"'), 1)
+        self.assertEqual(html.count('script src="/local_ext/web_patch.js?'), 1)
         # 必须在 </head> 之前（<script> 与 </head> 之间只允许夹注释行）
-        head_tail = html.split("</head>")[0].split('src="/local_ext/web_patch.js"></script>')
+        head_tail = re.split(r'src="/local_ext/web_patch\.js\?v=[0-9a-f]+"></script>', html.split("</head>")[0])
         self.assertEqual(len(head_tail), 2, "web_patch.js 应出现在 </head> 之前")
         self.assertIn("local patch end", head_tail[1])
         # 不能落在 <style> 里（否则标记会被当 CSS 文本渲染成可见乱码）

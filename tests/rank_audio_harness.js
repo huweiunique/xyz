@@ -89,11 +89,11 @@ async function main() {
     const next=context();next.c.HGAudio.install(next.c.store);
     assert.equal(next.player.muted,true,'重新打开恢复静音');
   } else {
-    assert(html.includes('src="/local_ext/audio_patch.js"'));
+    assert(html.includes('src="/local_ext/audio_patch.js?v='));
     const init=html.indexOf('window.HGAudio.install(store)');
     assert(init>0 && init<html.indexOf('\nloadHome();'),'必须在启动加载前初始化静音');
     assert(init<html.indexOf('\nhandleDeepLink();'),'深链接也必须静音起播');
-    assert(html.indexOf('src="/local_ext/audio_patch.js"')<init);
+    assert(html.indexOf('src="/local_ext/audio_patch.js?v=')<init);
     assert.equal(html,fs.readFileSync('android/app/src/main/assets/hghub/index.html','utf8'));
   }
   console.log('PASS '+process.argv[2]);

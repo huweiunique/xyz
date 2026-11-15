@@ -90,6 +90,18 @@ class WebFunctionalTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["status"], "ok")
 
+    def test_frontend_assets_have_explicit_cache_policy(self):
+        import hashlib
+        _, _, headers = http_get(self.base + '/')
+        self.assertEqual(headers.get('Cache-Control'), 'no-store')
+        path = '/local_ext/player_controls.js'
+        status, body, headers = http_get(self.base + path)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get('Cache-Control'), 'no-store')
+        token = hashlib.sha256(body.replace(b'\r\n', b'\n')).hexdigest()[:12]
+        _, _, versioned = http_get(self.base + path + '?v=' + token)
+        self.assertIn('immutable', versioned.get('Cache-Control', ''))
+
     # ---------- 反代 ----------
 
     def test_play_is_proxied_to_8080(self):

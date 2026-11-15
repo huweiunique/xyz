@@ -1,11 +1,12 @@
 name: _build
 
 # 供 nightly.yml / release.yml 复用的构建流程。
-# 产出：APK + 未签名 IPA，并附上「本次包含哪些提交、改了什么」。
+# 按 targets 选择服务端、APK、未签名 IPA，附上提交清单及文件统计。
 #
 # 输入：
 #   channel  nightly | stable
 #   app_url  构建时内置的后端地址（留空则首次打开手填）
+#   targets  all 或以逗号分隔的 server/android/ios
 #
 # 访问密钥【不参与构建】：用户在 App 首次打开时输入并保存在本机。
 # 结构：notes（算说明）→ apk / ipa / docker（并行）→ publish（合并产物到同一个 Release）
@@ -23,6 +24,11 @@ on:
         type: string
         required: false
         default: ""
+      targets:
+        description: 逗号分隔的 server/android/ios，或 all
+        type: string
+        required: false
+        default: all
     # 关键：workflow_call 默认【不继承】调用方的 secrets，
     # 不在这里声明的话，job 里取到的 ${{ secrets.DOCKERHUB_* }} 是空的，
     # job 会被"未配置凭据"逻辑跳过（本仓库踩过）。required: false 不会因缺失而失败。
@@ -63,6 +69,16 @@ jobs:
             echo "suffix=-nightly-$(date -u +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: 校验构建范围
+        env:
+          BUILD_TARGETS: ${{ inputs.targets }}
+        run: |
+          python3 - <<'PY'
+          import os
+          targets = os.environ['BUILD_TARGETS']
+          assert targets == 'all' or (targets and set(targets.split(',')) <= {'server', 'android', 'ios'}), '构建范围无效'
+          PY
+
       - name: 生成发布说明（包含提交与改动）
         run: |
           OUT=notes.md
@@ -80,12 +96,15 @@ jobs:
             echo "| --- | --- |"
             echo "| 提交 | \`${GITHUB_SHA}\` |"
             echo "| 来源 | \`${GITHUB_REF_NAME}\` |"
+            echo "| 本次构建目标 | \`${{ inputs.targets }}\` |"
             echo "| 构建时间 | $(date -u '+%Y-%m-%d %H:%M UTC') |"
             echo "| 运行 | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
             echo "| 内置后端地址 | \`${{ inputs.app_url || '无（首次打开手填）' }}\` |"
             echo "| 访问密钥 | 不内置，首次打开在 App 内输入并保存 |"
             echo ""
             echo "### 下载"
+            echo ""
+            echo "> 未重建的平台保留此前可用附件，具体版本以文件名中的提交号为准。"
             echo ""
             if [ "${{ inputs.channel }}" = "stable" ]; then
               echo "- \`HGhub-<版本>.apk\`：Android 7.0+，debug 签名，可直接安装"
@@ -131,6 +150,10 @@ jobs:
 
   apk:
     needs: notes
+    if: inputs.targets == 'all' || contains(inputs.targets, 'android')
+    concurrency:
+      group: hghub-apk-${{ inputs.channel }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -169,6 +192,10 @@ jobs:
 
   ipa:
     needs: notes
+    if: inputs.targets == 'all' || contains(inputs.targets, 'ios')
+    concurrency:
+      group: hghub-ipa-${{ inputs.channel }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -224,18 +251,27 @@ jobs:
 
   publish:
     needs: [notes, apk, ipa]
+    if: >-
+      ${{ always() && !cancelled() && needs.notes.result == 'success' &&
+          (needs.apk.result == 'success' || needs.ipa.result == 'success') &&
+          !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    concurrency:
+      group: hghub-release-${{ inputs.channel }}-${{ needs.notes.outputs.version }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       # 不用批量/合并模式：多个 artifact 并发下载时会偶发
       # "Artifact download failed after 5 retries"（实际都下成功了，是内部重试误判）。
       # 改为逐个显式下载，每个指定准确的 name 和 path。
       - name: 下载 APK
+        if: needs.apk.result == 'success'
         uses: actions/download-artifact@v5
         with:
           name: apk
           path: dist
 
       - name: 下载 IPA
+        if: needs.ipa.result == 'success'
         uses: actions/download-artifact@v5
         with:
           name: ipa-unsigned
@@ -256,24 +292,27 @@ jobs:
           body_path: dist/notes.md
           prerelease: ${{ inputs.channel == 'nightly' }}
           fail_on_unmatched_files: true
-          files: |
-            dist/HGhub-*.apk
-            dist/HGhub-*.ipa
+          files: dist/HGhub-*
 
-      # 先确认本次两个安装包都已完整上传，再删除旧附件；构建或上传失败时保留旧包。
+      # 仅校验和清理本次选择的安装包类型，保留未重建端及其它附件。
       - name: Nightly 仅保留本次安装包
         if: inputs.channel == 'nightly'
         uses: actions/github-script@v7
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
+          BUILD_TARGETS: ${{ inputs.targets }}
         with:
           script: |
             const fs = require('fs');
             const path = require('path');
             const names = fs.readdirSync('dist').filter(name => /^HGhub-.*\.(apk|ipa)$/.test(name));
-            if (names.filter(name => name.endsWith('.apk')).length !== 1 ||
-                names.filter(name => name.endsWith('.ipa')).length !== 1) {
-              throw new Error('本次 APK / IPA 不完整，拒绝清理旧附件');
+            const targets = process.env.BUILD_TARGETS;
+            const types = [];
+            if (targets === 'all' || targets.split(',').includes('android')) types.push('.apk');
+            if (targets === 'all' || targets.split(',').includes('ios')) types.push('.ipa');
+            if (!types.length || names.length !== types.length ||
+                types.some(type => names.filter(name => name.endsWith(type)).length !== 1)) {
+              throw new Error('本次所选安装包不完整，拒绝清理旧附件');
             }
             const release_id = Number(process.env.RELEASE_ID);
             if (!Number.isSafeInteger(release_id) || release_id <= 0) throw new Error('发布记录无效');
@@ -289,6 +328,8 @@ jobs:
             await github.rest.git.updateRef({ ...context.repo, ref: 'tags/nightly', sha: context.sha, force: false });
             for (const asset of assets) {
               if (names.includes(asset.name)) continue;
+              if (!asset.name.startsWith('HGhub-')) continue;
+              if (!types.some(type => asset.name.endsWith(type))) continue;
               await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: asset.id });
               core.info('已删除旧 Nightly 附件：' + asset.name);
             }
@@ -298,6 +339,10 @@ jobs:
   # 两个都配了才会跑；否则整个 job 跳过。token 只在 login-action 里用，不会出现在日志。
   docker:
     needs: notes
+    if: inputs.targets == 'all' || contains(inputs.targets, 'server')
+    concurrency:
+      group: hghub-server-${{ inputs.channel }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

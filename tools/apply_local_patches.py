@@ -21,6 +21,8 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from local_ext.frontend_assets import version_token  # noqa: E402
 
 BEGIN = "HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py)"
 END = "HGHUB_LOCAL_PATCH END"
@@ -52,6 +54,12 @@ def patch(rel_path, name, anchor, insert, where="after", syntax=None):
     """注册一个补丁：在 anchor 出现处之后/之前插入 insert（若尚未插入）。"""
     PATCHES.setdefault(rel_path, []).append(
         {"name": name, "anchor": anchor, "insert": insert, "where": where, "syntax": syntax})
+
+
+def asset_script(name):
+    with open(os.path.join(ROOT, 'local_ext', name), 'rb') as f:
+        version = version_token(f.read())
+    return f'<script src="/local_ext/{name}?v={version}"></script>\n'
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +111,13 @@ patch(
 """,
 )
 
+patch("web/server.py", "frontend asset cache policy",
+      'self.send_header("Content-Length", str(len(body)))',
+      '''        from local_ext.frontend_assets import cache_headers
+        for _name, _value in cache_headers(self.path, body, status):
+            self.send_header(_name, _value)
+''')
+
 patch(
     "web/server.py", "serve local_ext static",
     'if path == "/hls.min.js":',
@@ -125,8 +140,7 @@ patch(
 patch(
     "web/index.html", "local frontend patch",
     "</head>",
-    """<script src="/local_ext/web_patch.js"></script>
-""",
+    asset_script('web_patch.js'),
     where="before-anchor-line",
 )
 
@@ -136,8 +150,7 @@ patch(
 patch(
     "android/app/src/main/assets/hghub/index.html", "local frontend patch (apk)",
     "</head>",
-    """<script src="/local_ext/web_patch.js"></script>
-""",
+    asset_script('web_patch.js'),
     where="before-anchor-line",
 )
 
@@ -146,8 +159,7 @@ patch(
 # 播放增强在上游脚本之后加载，复用其播放器、进度与历史存储。
 for _page in ("web/index.html", "android/app/src/main/assets/hghub/index.html"):
     patch(_page, "rank and session audio modules", "</head>",
-          '<script src="/local_ext/audio_patch.js"></script>\n'
-          '<script src="/local_ext/rank_patch.js"></script>\n',
+          asset_script('audio_patch.js') + asset_script('rank_patch.js'),
           where="before-anchor-line")
     patch(_page, "initialize rank and session audio", '\nloadHotTags();\nloadHome();',
           'if (window.HGAudio) window.HGAudio.install(store);\n'
@@ -159,16 +171,16 @@ for _page in ("web/index.html", "android/app/src/main/assets/hghub/index.html"):
           'if (window.HGAudio) return; // 暂停和继续不能自动开声。\n',
           where="before-anchor-line", syntax="js")
     patch(_page, "player enhancements", "</body>",
-          '<script src="/local_ext/player_patch.js"></script>\n',
+          asset_script('player_patch.js'),
           where="before-anchor-line")
     patch(_page, "unified player controls", "</body>",
-          '<script src="/local_ext/player_controls.js"></script>\n',
+          asset_script('player_controls.js'),
           where="before-anchor-line")
     patch(_page, "GPU video enhancement", "</body>",
-          '<script src="/local_ext/video_enhance.js"></script>\n',
+          asset_script('video_enhance.js'),
           where="before-anchor-line")
     patch(_page, "immersive viewing UI", "</body>",
-          '<script src="/local_ext/viewing_ui.js"></script>\n',
+          asset_script('viewing_ui.js'),
           where="before-anchor-line")
     patch(_page, "bounded player recovery", '    if (data && data.fatal && !tried){',
           'if (window.hgRecoverHls && window.hgRecoverHls(hls, data, tried)) return;\n',
@@ -180,7 +192,7 @@ for _page in ("web/index.html", "android/app/src/main/assets/hghub/index.html"):
 # CF 设置在业务脚本后加载；iOS 同时随包注入，可连接未部署扩展的旧后端。
 for _page in ("web/index.html", "android/app/src/main/assets/hghub/index.html"):
     patch(_page, "preferred IP settings", "</body>",
-          '<script src="/local_ext/prefip_patch.js"></script>\n',
+          asset_script('prefip_patch.js'),
           where="before-anchor-line")
 
 patch("web/server.py", "preferred IP refresh", 'if path == "/api/prefip":',
@@ -239,7 +251,37 @@ def _is_applied(text, rel_path, spec):
     return any(key and key in blk for blk in _patch_blocks(text))
 
 
+def _refresh_asset_block(text, spec):
+    """按脚本路径原位更新已拥有的标记块，版本变化不重复插入脚本。"""
+    def paths(value):
+        return re.findall(r'<script src="(/local_ext/[^"?]+)(?:\?[^" ]*)?"></script>', value)
+
+    wanted = paths(spec['insert'])
+    if not wanted:
+        return None
+    lines = text.splitlines(keepends=True)
+    start = None
+    for index, line in enumerate(lines):
+        if start is None and BEGIN_RE.match(line):
+            start = index
+        elif start is not None and END_RE.match(line):
+            content = ''.join(lines[start + 1:index])
+            if paths(content) == wanted:
+                if content.strip() == spec['insert'].strip():
+                    return text, 'already'
+                indent = INDENT_RE.match(lines[start]).group(0)
+                body = ''.join(indent + item + '\n' for item in spec['insert'].strip('\n').splitlines())
+                return ''.join(lines[:start + 1]) + body + ''.join(lines[index:]), 'updated'
+            start = None
+    if start is not None:
+        raise SystemExit('[patch] 文件里有 BEGIN 但找不到 END，拒绝更新脚本引用')
+    return None
+
+
 def apply_one(text, spec, rel_path):
+    refreshed = _refresh_asset_block(text, spec)
+    if refreshed is not None:
+        return refreshed
     if _is_applied(text, rel_path, spec):
         return text, "already"
     anchor = spec["anchor"]
@@ -314,7 +356,7 @@ def main():
     print(f"[patch] 完成：{changed} 个文件{'会被' if args.check else '被'}修改")
     if args.check and args.revert:
         return 0
-    return 0
+    return 1 if args.check and changed else 0
 
 
 if __name__ == "__main__":

@@ -95,6 +95,18 @@ class ViewingUITests(BrowserFixture):
             self.assertTrue(button['icon'])
             self.assertTrue(button['label'])
 
+    def test_clean_home_does_not_hide_full_player_center_button(self):
+        result=self.evaluate("""(()=>{
+          document.querySelector('#player').hidden=false;
+          document.querySelector('#playerPane').hidden=false;
+          document.body.dataset.view='home';
+          document.body.classList.add('hg-immersive','hg-feed-clean');
+          document.body.classList.remove('hg-ui-hidden','hg-locked');
+          const b=document.querySelector('#hgPlayPause'),r=b.getBoundingClientRect();
+          return {visibility:getComputedStyle(b).visibility,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.id};
+        })()""")
+        self.assertEqual(result,dict(visibility='visible',hit='hgPlayPause'))
+
     def test_player_does_not_hide_while_paused_or_dragging(self):
         self.evaluate("(async()=>{document.querySelector('#player').hidden=false;document.querySelector('#playerPane').hidden=false;await new Promise(r=>setTimeout(r,0));})()")
         result=self.evaluate("""(()=>{
