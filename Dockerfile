@@ -2,7 +2,7 @@
 #
 # 两个服务都是纯标准库 Python，外加系统 openssl（封面解密必需）。
 # 镜像里故意保留 openssl 和 ca-certificates：
-#   - 没有 openssl 时 /proxy/img 会把密文当图片返回（封面全破图，本机踩过）
+#   - 没有 openssl 时 /proxy/img 无法解密封面，返回 502
 #   - 没有 CA 证书时无法访问 https://huangguoai.com
 #
 # Debian 软件源默认用阿里云镜像：国内直连 deb.debian.org 会 502。

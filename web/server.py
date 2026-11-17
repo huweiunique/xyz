@@ -77,6 +77,9 @@ PROXY_BASE = os.environ.get("PROXY_BASE", "http://127.0.0.1:8080").rstrip("/")
 UPSTREAM = os.environ.get("UPSTREAM", "https://huangguoai.com").rstrip("/")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+from local_ext import cover_proxy as _cover_proxy
+# ==== HGHUB_LOCAL_PATCH END ====
 
 USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
 
@@ -126,6 +129,9 @@ def _sniff_image(data: bytes) -> str:
 
 def _aes_decrypt_cbc_nopad(data: bytes) -> bytes | None:
     """用系统 openssl 解密 AES-128-CBC（无填充）。失败返回 None。"""
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+    return _cover_proxy.decrypt(data, IMG_KEY, IMG_IV)
+# ==== HGHUB_LOCAL_PATCH END ====
     if len(data) == 0 or len(data) % 16 != 0:
         return None
     try:
@@ -229,6 +235,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _proxy_to(self, url, data=None, headers=None):
         status, body, ctype = _fetch(url, data=data, headers=headers)
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+        _cover_proxy.observe(url, status, body, UPSTREAM, data)
+# ==== HGHUB_LOCAL_PATCH END ====
         self._send(status, body, content_type=ctype or "application/octet-stream")
 
     def do_OPTIONS(self):
@@ -366,6 +375,9 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"status": 0, "msg": "not found"})
 
     def _proxy_img(self, url: str) -> None:
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+        return _cover_proxy.serve(self, url, IMG_HOSTS, _aes_decrypt_cbc_nopad, _sniff_image)
+# ==== HGHUB_LOCAL_PATCH END ====
         if not url.startswith(("http://", "https://")):
             self._json(400, {"status": 0, "msg": "url must be http(s)"})
             return

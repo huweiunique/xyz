@@ -76,6 +76,22 @@ LOCAL_EXT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 """,
 )
 
+patch('web/server.py', 'import cover proxy extension',
+      'INDEX_PATH = os.path.join(BASE_DIR, "index.html")',
+      'from local_ext import cover_proxy as _cover_proxy\n')
+
+patch('web/server.py', 'observe upstream cover URLs',
+      'status, body, ctype = _fetch(url, data=data, headers=headers)',
+      '        _cover_proxy.observe(url, status, body, UPSTREAM, data)\n')
+
+patch('web/server.py', 'restricted cover proxy',
+      'def _proxy_img(self, url: str) -> None:',
+      '        return _cover_proxy.serve(self, url, IMG_HOSTS, _aes_decrypt_cbc_nopad, _sniff_image)\n')
+
+patch('web/server.py', 'portable cover decryption',
+      '"""用系统 openssl 解密 AES-128-CBC（无填充）。失败返回 None。"""',
+      '    return _cover_proxy.decrypt(data, IMG_KEY, IMG_IV)\n')
+
 patch(
     "web/server.py", "auth hook in do_GET",
     "qs = urllib.parse.parse_qs(parsed.query)",

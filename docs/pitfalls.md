@@ -6,8 +6,9 @@
 
 | 坑 | 现象 | 真相 |
 | --- | --- | --- |
-| **本机没有 openssl** | 封面全是破图，但 `/proxy/img` 返回 200 `image/jpeg` | 解密失败后原样返回密文，还被写进 200 张内存缓存。Windows 默认没 openssl —— 用 Git 自带的 `C:\Program Files\Git\usr\bin\openssl.exe` 加进 PATH，或直接用容器 |
-| **缓存污染** | 修好 openssl 后，之前看过的封面还是坏的 | 密文已进 LRU 缓存。重启服务（或加一个清缓存入口） |
+| **图床更换域名** | `/proxy/img` 返回 403 | 旧版固定白名单拦截新域名。现已从可信上游内容响应自动登记完整封面 URL；先刷新内容，必要时配置 `HGHUB_IMAGE_HOSTS`，见 [封面代理](cover-proxy.md) |
+| **本机没有 openssl** | 旧版会返回 200 密文；修复版返回 502 `image decode failed` | 现在自动尝试 Git 自带 OpenSSL，也可设置 `HGHUB_OPENSSL`；容器已安装 |
+| **旧版缓存污染** | 修好 openssl 后，之前看过的封面还是坏的 | 旧版把密文写入 LRU。升级重启后旧缓存释放；新版只缓存识别成功的图片 |
 | 代理没转发 `x-cdn-auth` | 上游开始校验 CDN 鉴权头时播放直接断 | `/proxy/*` 只透传 URL，`data.cdn.authValue` 丢了。当前 CDN 不校验，属于潜伏问题，测试 `test_cdn_auth_header_is_forwarded` 守着 |
 | HEAD 请求 501 | 某些探活/CDN 探测失败 | 服务只实现了 `do_GET`/`do_POST`，不是我们引入的 |
 | 清单 key/ts 域名会变 | 逐字节比对清单会偶发失败 | 上游在 `tp3/tp4/tp6/tp7.drleao.cn` 之间轮换，只能比结构不能比内容 |

@@ -36,6 +36,7 @@ services:
       HGHUB_ALLOW_IPS: "${HGHUB_ALLOW_IPS:-}"
       HGHUB_TRUST_PROXY: "${HGHUB_TRUST_PROXY:-}"
       HGHUB_COOKIE_SECURE: "${HGHUB_COOKIE_SECURE:-}"
+      HGHUB_IMAGE_HOSTS: "${HGHUB_IMAGE_HOSTS:-}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
       interval: 30s
