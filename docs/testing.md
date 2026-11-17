@@ -11,6 +11,10 @@ python tools/apply_local_patches.py --check
 
 Backend tests 使用这一默认范围，然后执行补丁检查、Docker 构建及容器健康检查。在线测试仍由 `--online` 控制，与 UI 开关独立。
 
+封面及播放 CDN 自动登记分别由 `test_cover_proxy.py`、`test_media_proxy.py` 通过真实本地 HTTP 路由离线回归。
+播放在线用例再核对真实清单、密钥、分片及 MPEG-TS 解密；未安装可选 cryptography 时回退到已有 OpenSSL，
+两者均不可用才明确跳过解密。在线 403 区分本地策略与上游拒绝，不再统一归因为鉴权头未转发。
+
 ## 可选浏览器自动测试
 
 ```bash

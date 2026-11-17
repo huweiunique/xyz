@@ -62,6 +62,26 @@ def asset_script(name):
     return f'<script src="/local_ext/{name}?v={version}"></script>\n'
 
 
+patch('proxy/server.py', 'import media proxy extension',
+      'from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer',
+      '''import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from local_ext import media_proxy as _media_proxy
+''')
+
+patch('proxy/server.py', 'register trusted playback resources',
+      '        self._json(200, data)',
+      '_media_proxy.observe(data)\n', where='before-anchor-line')
+
+patch('proxy/server.py', 'configurable API upstream',
+      'UPSTREAM = "https://huangguoai.com"',
+      'UPSTREAM = os.environ.get("UPSTREAM", UPSTREAM).rstrip("/")\n')
+
+patch('proxy/server.py', 'dynamic media resource policy',
+      'def _proxy(self, url: str) -> None:',
+      '        return _media_proxy.serve(self, url)\n')
+
+
 # ---------------------------------------------------------------------------
 # 1) web/server.py —— 访问密钥：导入 + 3 个钩子
 # ---------------------------------------------------------------------------

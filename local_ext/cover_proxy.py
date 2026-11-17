@@ -31,7 +31,7 @@ def reset():
         _cache.clear()
 
 
-def _parse(url):
+def parse_https_url(url):
     if not isinstance(url, str) or len(url) > 8192 or any(ord(c) <= 32 or ord(c) == 127 for c in url):
         raise ValueError('invalid image URL')
     parsed = urllib.parse.urlsplit(url)
@@ -64,7 +64,7 @@ def observe(url, status, body, upstream, data=None):
         if isinstance(node, dict):
             cover = node.get('cover')
             try:
-                _parse(cover)
+                parse_https_url(cover)
                 urls.append(cover)
             except ValueError:
                 pass
@@ -82,7 +82,7 @@ def observe(url, status, body, upstream, data=None):
 
 def allowed(url, legacy_hosts):
     try:
-        host = _parse(url).hostname.lower()
+        host = parse_https_url(url).hostname.lower()
     except ValueError:
         return False
     extra = {h.strip().lower() for h in os.environ.get('HGHUB_IMAGE_HOSTS', '').split(',') if h.strip()}
@@ -124,25 +124,39 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
         raise OSError('cannot connect to image host')
 
 
-def _download(url):
-    parsed = _parse(url)
-    connection = _PinnedHTTPS(parsed.hostname, timeout=20, context=ssl.create_default_context())
+class UpstreamError(ValueError):
+    """保留资源服务器状态码，避免把上游拒绝与本地策略拒绝混为一谈。"""
+    def __init__(self, status):
+        self.status = status
+        super().__init__('upstream resource HTTP ' + str(status))
+
+
+def _download(url, headers=None, max_bytes=MAX_BYTES, timeout=20):
+    parsed = parse_https_url(url)
+    connection = _PinnedHTTPS(parsed.hostname, timeout=timeout, context=ssl.create_default_context())
     try:
         path = urllib.parse.urlunsplit(('', '', parsed.path or '/', parsed.query, ''))
-        connection.request('GET', path, headers={'User-Agent': 'HGhub-cover/1.0', 'Accept-Encoding': 'identity'})
+        request_headers = {'User-Agent': 'HGhub-resource/1.0', 'Accept-Encoding': 'identity'}
+        request_headers.update(headers or {})
+        connection.request('GET', path, headers=request_headers)
         response = connection.getresponse()
-        # 图片代理不跟随重定向，防止允许的 URL 跳转到任意服务。
+        # 资源代理不跟随重定向，防止允许的 URL 跳转到任意服务。
         if response.status != 200:
-            raise ValueError('upstream image HTTP ' + str(response.status))
+            raise UpstreamError(response.status)
         length = response.getheader('Content-Length')
-        if length and int(length) > MAX_BYTES:
-            raise ValueError('image too large')
-        body = response.read(MAX_BYTES + 1)
-        if len(body) > MAX_BYTES:
-            raise ValueError('image too large')
+        if length and int(length) > max_bytes:
+            raise ValueError('resource too large')
+        body = response.read(max_bytes + 1)
+        if len(body) > max_bytes:
+            raise ValueError('resource too large')
         return body
     finally:
         connection.close()
+
+
+def download_resource(url, *, headers=None, max_bytes, timeout=30):
+    """供播放代理复用相同的公网校验、固定 IP、TLS 和下载边界。"""
+    return _download(url, headers=headers, max_bytes=max_bytes, timeout=timeout)
 
 
 def decrypt(data, key, iv):
@@ -171,7 +185,7 @@ def decrypt(data, key, iv):
 
 def serve(handler, url, legacy_hosts, decrypt_image, sniff):
     try:
-        _parse(url)
+        parse_https_url(url)
     except ValueError:
         handler._json(400, {'status': 0, 'msg': 'invalid image URL: HTTPS required'})
         return
@@ -188,7 +202,7 @@ def serve(handler, url, legacy_hosts, decrypt_image, sniff):
     try:
         body = _download(url)
     except (OSError, ValueError, http.client.HTTPException):
-        log.warning('cover fetch failed for host %s', _parse(url).hostname)
+        log.warning('cover fetch failed for host %s', parse_https_url(url).hostname)
         handler._json(502, {'status': 0, 'msg': 'image fetch failed'})
         return
     ctype = sniff(body)
@@ -196,7 +210,7 @@ def serve(handler, url, legacy_hosts, decrypt_image, sniff):
         body = decrypt_image(body)
         ctype = sniff(body) if body is not None else 'application/octet-stream'
     if ctype == 'application/octet-stream':
-        log.warning('cover decode failed for host %s', _parse(url).hostname)
+        log.warning('cover decode failed for host %s', parse_https_url(url).hostname)
         handler._json(502, {'status': 0, 'msg': 'image decode failed; check OpenSSL and upstream image protocol'})
         return
     with _lock:

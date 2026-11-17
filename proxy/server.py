@@ -48,11 +48,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from local_ext import media_proxy as _media_proxy
+# ==== HGHUB_LOCAL_PATCH END ====
 
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
 
 UPSTREAM = "https://huangguoai.com"
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+UPSTREAM = os.environ.get("UPSTREAM", UPSTREAM).rstrip("/")
+# ==== HGHUB_LOCAL_PATCH END ====
 USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
 
 # Only these hosts may be relayed through /proxy.
@@ -163,9 +171,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         # 与部署版一致：把上游响应原样返回（含 data 包装），不拆包。
         # 前端两种形状都兼容：(d.data && d.data.streams) || d.streams。
+        # ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+        _media_proxy.observe(data)
+        # ==== HGHUB_LOCAL_PATCH END (tools/apply_local_patches.py) ====
         self._json(200, data)
 
     def _proxy(self, url: str) -> None:
+# ==== HGHUB_LOCAL_PATCH BEGIN (tools/apply_local_patches.py) ====
+        return _media_proxy.serve(self, url)
+# ==== HGHUB_LOCAL_PATCH END ====
         if not url.startswith(("http://", "https://")):
             self._json(400, {"status": 0, "msg": "url must be http(s)"})
             return

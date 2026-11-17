@@ -229,33 +229,38 @@ class ProxyFunctionalTests(unittest.TestCase):
 
     @unittest.skipUnless(ONLINE, "ONLINE=0")
     def test_cdn_auth_header_is_forwarded(self):
-        """上游签名的 CDN 需要 x-cdn-auth 头才会给出真实资源。
+        """代理使用播放响应的 CDN 鉴权；403 必须区分本地策略和上游拒绝。
 
-        代理文档写明 authKey = x-cdn-auth；`_proxy()` 目前没有转发
-        播放响应里的 cdn.authValue，所以带鉴权头的 CDN 会失败。
-        这里断言“带了头就能通、没带就 403”，用来锁定这个缺口。
+        真实 CDN 不一定要求鉴权，头继承行为由离线路由回归确定性验证。
+        这里验证客户端无需手动携带鉴权头也能取到当前播放清单。
         """
         status, body, _ = http_post_json(self.base + "/api/play",
                                          {"id": SAMPLE_ID, "ep": SAMPLE_EP})
         self.assertEqual(status, 200, body[:200])
         d = json.loads(body)
         d = d.get("data") or d
-        cdn = d.get("cdn") or {}
-        if not cdn.get("authKey") or not cdn.get("authValue"):
-            self.skipTest("upstream did not require cdn auth this time")
         main = d["streams"]["main"]
         q = urllib.parse.quote(main, safe="")
         plain, with_auth = None, None
         try:
             plain = http_get(self.base + "/proxy/m3u8?url=" + q)
             with_auth = http_get(self.base + "/proxy/m3u8?url=" + q,
-                                 headers={cdn["authKey"]: cdn["authValue"]})
+                                 headers={"x-cdn-auth": "client-header-is-not-trusted"})
         except (ConnectionError, urllib.error.URLError) as exc:
             self.fail(f"keep-alive 连接被服务端直接断开：{exc}")
         status_code = with_auth[0]
+        def source(result):
+            try:
+                return json.loads(result[1]).get('source', 'unknown')
+            except (ValueError, AttributeError):
+                return 'unknown'
+        if status_code == 403 and source(with_auth) == 'upstream':
+            self.skipTest('上游 CDN 拒绝本次请求；已排除本地白名单拒绝')
         self.assertEqual(status_code, 200,
-                         f"代理没有把 {cdn['authKey']} 转发给 CDN（返回 {status_code}，"
-                         f"不带头时是 {plain[0]}）")
+                         f"播放清单请求失败：HTTP {status_code}，来源 {source(with_auth)}；"
+                         f"无客户端鉴权头时 HTTP {plain[0]}，来源 {source(plain)}")
+        self.assertEqual(plain[0], 200)
+        self.assertEqual(plain[1][:7], b"#EXTM3U")
         self.assertEqual(with_auth[1][:7], b"#EXTM3U")
 
     @unittest.skipUnless(ONLINE, "ONLINE=0")
@@ -274,7 +279,12 @@ class ProxyFunctionalTests(unittest.TestCase):
         q = urllib.parse.quote(main, safe="")
         status, manifest, headers = http_get(self.base + "/proxy/m3u8?url=" + q)
         if status == 403:
-            self.skipTest("上游清单返回 403（签名过期或 CDN 侧变更），稍后重试")
+            try:
+                source = json.loads(manifest).get('source')
+            except ValueError:
+                source = None
+            if source == 'upstream':
+                self.skipTest("上游清单返回 403，已排除本地策略拒绝")
         self.assertEqual(status, 200, manifest[:200])
         self.assertIn("mpegurl", headers.get("Content-Type", ""))
         text = manifest.decode("utf-8", "ignore")
@@ -292,12 +302,14 @@ class ProxyFunctionalTests(unittest.TestCase):
         self.assertTrue(uris, "manifest has no #EXT-X-KEY URI")
 
         targets = [("key", uris[0])] + [("ts", r) for r in refs[:2]]
+        def resource_url(ref):
+            self.assertTrue(ref.startswith('/proxy/'), '清单资源必须经同源代理')
+            return self.base + ref
         for kind, ref in targets:
-            abs_url = urllib.parse.urljoin(main.rsplit("/", 1)[0] + "/", ref)
+            abs_url = resource_url(ref)
             try:
                 status, body, headers = http_get(
-                    self.base + f"/proxy/{kind}?url=" + urllib.parse.quote(abs_url, safe=""),
-                    timeout=60)
+                    abs_url, timeout=60)
             except (ConnectionError, urllib.error.URLError) as exc:
                 self.fail(f"{kind} 请求时连接被服务端断开（keep-alive 复用问题）：{exc}")
             self.assertEqual(status, 200, f"{kind} {abs_url} -> {status}")
@@ -312,18 +324,21 @@ class ProxyFunctionalTests(unittest.TestCase):
 
         # 解密链路自检：用清单里的 key + IV 解开第一个分片，必须出现 TS 同步字节。
         # 这能在不依赖播放器的情况下证明“密钥和分片是配对的、能解出视频”。
-        key = http_get(self.base + "/proxy/key?url=" +
-                       urllib.parse.quote(urllib.parse.urljoin(
-                           main.rsplit("/", 1)[0] + "/", uris[0]), safe=""))[1]
-        seg = http_get(self.base + "/proxy/ts?url=" +
-                       urllib.parse.quote(urllib.parse.urljoin(
-                           main.rsplit("/", 1)[0] + "/", refs[0]), safe=""))[1]
+        key = http_get(resource_url(uris[0]))[1]
+        seg = http_get(resource_url(refs[0]))[1]
         iv = re.search(r"IV=0x([0-9a-fA-F]+)", text)
-        if not aes128_cbc_decrypt:
-            self.skipTest("未安装 cryptography，跳过解密自检（可选依赖）")
-        decoded = aes128_cbc_decrypt(
-            seg, key, bytes.fromhex(iv.group(1)) if iv else key)
+        sequence = re.search(r"#EXT-X-MEDIA-SEQUENCE:(\d+)", text)
+        vector = bytes.fromhex(iv.group(1)) if iv else int(sequence.group(1) if sequence else 0).to_bytes(16, 'big')
+        if aes128_cbc_decrypt:
+            decoded = aes128_cbc_decrypt(seg, key, vector)
+        else:
+            sys.path.insert(0, REPO_ROOT)
+            from local_ext.cover_proxy import decrypt
+            decoded = decrypt(seg, key, vector)
+            if decoded is None:
+                self.skipTest("cryptography 与 OpenSSL 均不可用，未运行分片解密自检")
         self.assertEqual(decoded[0], 0x47, "decrypted segment is not MPEG-TS")
+        self.assertEqual(decoded[188], 0x47, "second MPEG-TS packet is not aligned")
 
     @unittest.skipUnless(ONLINE, "ONLINE=0")
     def test_unknown_video_reports_failure(self):

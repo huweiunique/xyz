@@ -14,6 +14,7 @@
 ```
 local_ext/
   cover_proxy.py    # 可信上游封面 URL 登记、受限下载与可移植 OpenSSL 解密
+  media_proxy.py    # 可信播放清单及其引用登记、同源改写与服务端 CDN 鉴权继承
   access_key.py     # 鉴权全部逻辑：key 校验、Cookie 签发、IP 白名单
   web_patch.js      # 前端鉴权与布局修正：行内图标、App 顶栏、看全集自适应
   app_settings.js   # iOS 随包注入：“我的 → 设置”的地址与密钥配置入口
@@ -33,6 +34,9 @@ tools/
 
 封面通过四处标记补丁导入扩展、观察上游内容响应、接管图片代理与解密入口，
 行为与配置详见 [封面图床自动适配](cover-proxy.md)。
+
+播放代理也由四处标记补丁接入：扩展导入、共用 API 入口配置、播放响应发送前登记、
+资源代理接管。全仓库地址盘点和边界见 [上游地址变化盘点](upstream-address-audit.md)。
 
 | 文件 | 补丁 | 位置 |
 | --- | --- | --- |

@@ -30,6 +30,7 @@ services:
       PROXY_PORT: "8080"
       WEB_PORT: "8081"
       PROXY_BASE: "http://127.0.0.1:8080"
+      UPSTREAM: "${UPSTREAM:-https://huangguoai.com}"
       TZ: Asia/Shanghai
       # ---- 访问密钥（来自宿主机环境变量或 .env；未设置则为空 = 关闭鉴权）----
       HGHUB_ACCESS_KEY: "${HGHUB_ACCESS_KEY:-}"
