@@ -6,11 +6,15 @@
   var video = document.getElementById('video');
   var pane = document.getElementById('playerPane');
   var player = document.getElementById('player');
-  if (!video || !pane || !player) return;
+  var detail = document.getElementById('detailPane');
+  if (!video || !pane || !player || !detail) return;
 
   var style = document.createElement('style');
   style.textContent = [
     ':root{--page-shift:0px}',
+    '#player{padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) calc(var(--bottomnav-h) + 20px) max(12px,env(safe-area-inset-left))}',
+    '#player:has(#detailPane:not([hidden])) .close{width:44px;height:44px}',
+    '#btnBackFeed{min-height:44px}',
     'body.hg-immersive .bottomnav{display:none}',
     'body.hg-immersive #player:has(#playerPane:not([hidden])){padding:0;height:100vh;height:100dvh;overflow:hidden;background:#000}',
     'body.hg-immersive #player:has(#playerPane:not([hidden])) .box{position:absolute;left:50%;top:50%;width:100%;height:100%;max-width:none;transform:translate(-50%,-50%)}',
@@ -30,6 +34,12 @@
 
   var immersive = false;
   var hideTimer;
+  player.tabIndex = -1;
+  function enterPlayerView() {
+    player.scrollTop = 0;
+    // 焦点留在弹层内，避免已隐藏的搜索框或详情按钮移动视口。
+    player.focus({preventScroll: true});
+  }
   var rotate = document.createElement('button');
   rotate.id = 'hgRotate';
   rotate.type = 'button';
@@ -69,7 +79,10 @@
       updateRotation(false);
       rotate.setAttribute('aria-pressed', 'false');
       clearTimeout(hideTimer);
-    } else reveal();
+    } else {
+      enterPlayerView();
+      reveal();
+    }
     // iOS 仅在播放页隐藏状态栏，保持原有系统视频全屏入口。
     var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.hgPlayer;
     if (bridge) bridge.postMessage(visible);
@@ -88,19 +101,22 @@
     else rotate.textContent = label;
   }
   rotate.addEventListener('hg-icon-ready',function(){updateRotation(document.body.classList.contains('hg-landscape'));});
-  function isScreenTarget(target) {
-    return target && target.closest && !target.closest('button,a,input,select,summary,.ctl,.hg-choice,#hgLockShield');
+  function isScreenTarget(event) {
+    // 控件刷新图标后，原点击元素可能已脱离 DOM，事件路径仍保留原按钮。
+    return !event.composedPath().some(function (node) {
+      return node instanceof Element && node.matches('button,a,input,select,summary,.ctl,.hg-choice,#hgLockShield');
+    });
   }
   player.addEventListener('pointerdown', function (e) {
     if (!immersive || document.body.classList.contains('hg-locked')) return;
     interacting = true;
-    screenInteraction = isScreenTarget(e.target);
+    screenInteraction = isScreenTarget(e);
     tapWasHidden = document.body.classList.contains('hg-ui-hidden');
     if (!screenInteraction) reveal();
   });
   // 黑色留白、播放器容器与视频画面都即时显隐；具体控件继续执行自身操作。
   player.addEventListener('click', function (e) {
-    if (!immersive || document.body.classList.contains('hg-locked') || !isScreenTarget(e.target)) return;
+    if (!immersive || document.body.classList.contains('hg-locked') || !isScreenTarget(e)) return;
     clearTimeout(hideTimer);
     if (tapWasHidden) reveal();
     else document.body.classList.add('hg-ui-hidden');
@@ -168,11 +184,15 @@
   }
   window.openDetail = function () {
     leaveVideo();
+    var focused = document.activeElement;
+    if (focused && !player.contains(focused)) focused.blur();
     return originalOpenDetail.apply(this, arguments);
   };
   window.showDetailPane = function () {
     leaveVideo();
-    return originalShowDetail.apply(this, arguments);
+    var result = originalShowDetail.apply(this, arguments);
+    if (!player.hidden) enterPlayerView();
+    return result;
   };
   window.closePlayer = function () {
     leaveVideo(); // pause 事件可能异步到达，必须在上游清空 src 之前保存。

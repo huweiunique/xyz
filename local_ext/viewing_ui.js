@@ -18,14 +18,14 @@
     body[data-view=home] #newBanner{position:absolute;top:var(--hg-screen-top,24px);left:50%;transform:translateX(-50%);margin:0;width:max-content;max-width:calc(100% - 140px);font-size:12px;overflow-wrap:anywhere}
     body[data-view=home].hg-feed-clean #newBanner{visibility:hidden;pointer-events:none}
     body[data-view=home] .slide video.bgvid,body[data-view=home] .slide img.cover{object-fit:contain}
-    body[data-view=home] .bottomnav{background:#0e0e11ed}
+    body[data-view=home]:not(.modal-open) .bottomnav{background:#0e0e11ed}
     body[data-view=home] .slide .info{bottom:calc(var(--hg-nav-height,64px) + 4px);max-height:45%;overflow:auto}
     body[data-view=home] .slide .acts{bottom:calc(var(--hg-nav-height,64px) + 24px)!important;max-height:65%;overflow:auto;gap:12px}
     body[data-view=home] .slide .prog{bottom:var(--hg-nav-height,64px)}
     body[data-view=home] .slide .info h3{overflow-wrap:anywhere}
     body[data-view=home] .slide .info p.syn.expanded{max-height:22vh;overflow:auto}
     body[data-view=home] .slide{opacity:1;transform:none;transition:none;will-change:auto}
-    body[data-view=home].hg-feed-clean .bottomnav,
+    body[data-view=home].hg-feed-clean:not(.modal-open) .bottomnav,
     body[data-view=home].hg-feed-clean .slide :is(.info,.acts,.mutebtn,.prog,.shade){visibility:hidden;pointer-events:none}
     body[data-view=home] .slide .hg-center-play{z-index:4}
     body[data-view=home].hg-feed-clean #feed .hg-center-play{visibility:hidden;pointer-events:none}
@@ -51,10 +51,34 @@
     body.hg-ui-hidden #hgPip,body.hg-locked #hgPip{visibility:hidden;pointer-events:none}
     #playerPane .ctl button:active,#hgMore summary:active,#hgPip:active{background:#ffffff26}
     @media(hover:hover) and (pointer:fine){#playerPane .ctl button:hover,#hgMore summary:hover,#hgPip:hover{background:#ffffff18}}
-    @media(hover:hover) and (pointer:fine){body[data-view=home].hg-feed-clean .bottomnav{visibility:visible;pointer-events:auto}body[data-view=home] #hgFeedHint{display:none}}
-    @media(min-width:900px){body[data-view=home] #feed{max-width:560px;width:100%;margin-inline:auto}body[data-view=home] .slide video.bgvid,body[data-view=home] .slide img.cover{object-fit:contain}body[data-view=home] .bottomnav{left:50%;right:auto;transform:translateX(-50%);width:560px}}
+    @media(hover:hover) and (pointer:fine){body[data-view=home].hg-feed-clean:not(.modal-open) .bottomnav{visibility:visible;pointer-events:auto}body[data-view=home] #hgFeedHint{display:none}}
+    @media(min-width:900px){body[data-view=home] #feed{max-width:560px;width:100%;margin-inline:auto}body[data-view=home] .slide video.bgvid,body[data-view=home] .slide img.cover{object-fit:contain}body[data-view=home]:not(.modal-open) .bottomnav{left:50%;right:auto;transform:translateX(-50%);width:560px}}
     body.hg-landscape #hgMorePanel{max-height:calc(var(--hg-stage-height) - 230px)}
     @media(max-height:480px){#hgMorePanel{max-height:calc(100dvh - 200px);bottom:calc(100% + 48px)}#playerPane .ctl{padding:4px}.hg-progress input{min-height:28px}}
+    html:has(body[data-view=search]:not(.modal-open)){scrollbar-gutter:stable}
+    body[data-view=search]{--hg-search-width:1100px;--hg-search-left:max(12px,env(safe-area-inset-left));--hg-search-right:max(12px,env(safe-area-inset-right))}
+    body[data-view=search] header:has(#q){position:sticky;top:0;height:auto;padding:env(safe-area-inset-top) 0 0}
+    body[data-view=search].modal-open header{display:block;visibility:hidden}
+    body[data-view=search] .topbar,#view-search{max-width:var(--hg-search-width);margin-inline:auto;padding-inline:var(--hg-search-left) var(--hg-search-right)}
+    body[data-view=search] .topbar{padding-block:8px}
+    body[data-view=search] #btnLogoHome,body[data-view=search] footer{display:none}
+    body[data-view=search] .search{gap:8px}
+    body[data-view=search] .search input{min-height:44px;font-size:16px}
+    @media(pointer:coarse){.search input{font-size:16px}}
+    body[data-view=search] .search button{min-height:44px;white-space:nowrap;font-weight:600}
+    body[data-view=search] .search button:active,#hotTags .chip:active{filter:brightness(.86)}
+    body[data-view=search] .search :focus-visible,#hotTags .chip:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+    body[data-view=search] main{max-width:var(--hg-search-width);padding:16px 0 calc(var(--hg-nav-height,var(--bottomnav-h)) + 16px)}
+    body[data-view=search] .bottomnav{padding-left:max(4px,env(safe-area-inset-left));padding-right:max(4px,env(safe-area-inset-right))}
+    #hgHotTitle{font-size:14px;font-weight:600}
+    #hotTags:not(:has(.chip)),#hgHotTitle:not(:has(+ #hotTags .chip)){display:none}
+    #hotTags{margin:8px 0 16px}
+    #hotTags .chip{min-height:44px;max-width:100%;overflow-wrap:anywhere;text-align:left}
+    #searchTotal{margin:0 0 10px}
+    #searchTotal:empty,#searchTotal:not(:has(+ #searchGrid .card)){display:none}
+    @media(max-width:359px){#searchGrid{grid-template-columns:repeat(auto-fill,minmax(min(100%,138px),1fr))}}
+    #searchGrid .empty{grid-column:1/-1;overflow-wrap:anywhere}
+    #searchGrid .empty .btn{min-height:44px}
   `;
   document.head.appendChild(style);
   var back = document.getElementById('btnBackDetail');
@@ -101,7 +125,22 @@
     search.innerHTML = '<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></span>搜索';
     nav.insertBefore(search,nav.lastElementChild);
     // 原页面已有 data-view 的文档级导航委托。
-    search.addEventListener('click',function () { setTimeout(function () { var q=document.getElementById('q'); if(q)q.focus(); },0); });
+  }
+  var searchInput = document.getElementById('q');
+  var hotTags = document.getElementById('hotTags');
+  if (hotTags) {
+    var hotTitle = document.createElement('h2');
+    hotTitle.id = 'hgHotTitle';
+    hotTitle.textContent = '热门搜索';
+    hotTags.before(hotTitle);
+  }
+  if (searchInput) {
+    searchInput.setAttribute('aria-label', '搜索短剧、作者或标签');
+    var submitSearch = window.doSearch;
+    if (submitSearch) window.doSearch = function (query) {
+      if (query && query.trim() && window.matchMedia('(pointer:coarse)').matches) searchInput.blur();
+      return submitSearch.apply(this, arguments);
+    };
   }
   var hint = document.createElement('div'); hint.id = 'hgFeedHint'; hint.textContent = '轻点显示操作 · 上下滑切换'; body.appendChild(hint);
   setTimeout(function () { hint.hidden = true; },5000);
